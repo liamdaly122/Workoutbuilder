@@ -7,6 +7,36 @@ spells out every click.
 
 Total time: roughly 15-20 minutes, done once.
 
+**A rule for the whole guide: your secret keys only ever get typed into one
+place — the `.env.local` file on your own computer.** Never paste them into
+a chat, an email, a GitHub file, or anywhere else. That file is already set
+up to be ignored by git, so it can never accidentally end up in the public
+repository.
+
+---
+
+## Fast path: finishing with Claude Code on your computer
+
+If you're using the Claude Code desktop app, the smoothest way through this
+guide is a **local** session — one opened on a folder on your own computer,
+not a remote/cloud session. (Remote sessions run in a locked-down cloud
+sandbox that is not allowed to contact Supabase, so they can't run the
+database steps for you. Your own computer can.)
+
+1. Do **Part 1** below (create the Supabase project, copy the three values).
+2. Get the code onto your computer: in the desktop app, open a new session,
+   choose to open a **local folder**, and clone this repository into it
+   (you can simply ask Claude: *"clone my workoutbuilder repo and open it"*).
+3. In that folder, copy the file `.env.example` to a new file named
+   `.env.local`, open it in any text editor (Notepad is fine), and paste
+   your three values in — yourself, directly into the file.
+4. Do **Part 2** below (one SQL paste in the Supabase dashboard — this is
+   the one step that must happen in your browser).
+5. Then tell Claude: *"run npm install, then npm run seed:supabase, and
+   verify the exercises table has ~873 rows."* Claude can run this locally
+   because the keys are in the file, not in the chat.
+6. Finish with **Parts 5-7** below (Vercel deploy + create your login).
+
 ---
 
 ## Part 1: Create your database (Supabase)
@@ -35,11 +65,9 @@ Total time: roughly 15-20 minutes, done once.
      **private**. It's only used once, by a setup script, never by the
      live website.
 
-Copy all three somewhere handy - you'll paste them in a minute.
-
-> If Claude is helping you set this up in the same conversation, you can
-> paste all three values directly into the chat and it can use them to
-> finish the remaining steps below on your behalf.
+Copy all three somewhere handy - you'll paste them into `.env.local` in a
+minute (and only there - never into a chat; see the rule at the top of this
+guide).
 
 ---
 
@@ -82,8 +110,9 @@ Copy all three somewhere handy - you'll paste them in a minute.
     It only needs to be run once. You should see it count up to "Done -
     seeded 873 exercises."
 
-(If Claude is running this for you in a session where you've shared the
-keys, it will do this step for you - you can skip it.)
+(If you're following the "Fast path" at the top of this guide, this is the
+step a **local** Claude Code session runs for you - it reads the keys from
+your `.env.local` file, so you never have to share them.)
 
 ---
 
