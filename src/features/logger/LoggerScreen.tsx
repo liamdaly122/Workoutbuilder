@@ -1,9 +1,9 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { db } from '../../data/db';
 import {
   completeSession,
+  getSession,
   getSessionExercises,
   isMesocycleFinished,
   startSession,
@@ -14,34 +14,42 @@ import { WeekProgress } from '../../components/WeekProgress';
 import { RestTimer } from '../../components/RestTimer';
 import { Button } from '../../components/Button';
 import { ExerciseLogCard } from './ExerciseLogCard';
-import type { Exercise } from '../../domain/types';
 
 export function LoggerScreen() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const settings = useSettings();
 
-  const session = useLiveQuery(() => (sessionId ? db.workoutSessions.get(sessionId) : undefined), [sessionId]);
-  const sessionExercises = useLiveQuery(
-    () => (sessionId ? getSessionExercises(sessionId) : undefined),
-    [sessionId],
-  );
-  const [exerciseMap, setExerciseMap] = useState<Map<string, Exercise>>(new Map());
+  const { data: session } = useQuery({
+    queryKey: ['session', sessionId],
+    queryFn: () => getSession(sessionId!),
+    enabled: !!sessionId,
+  });
+  const { data: sessionExercises } = useQuery({
+    queryKey: ['sessionExercises', sessionId],
+    queryFn: () => getSessionExercises(sessionId!),
+    enabled: !!sessionId,
+  });
+  const { data: exerciseMap } = useQuery({
+    queryKey: ['exercisesByIds', sessionExercises?.map((se) => se.exerciseId)],
+    queryFn: () => getExercisesByIds(sessionExercises!.map((se) => se.exerciseId)),
+    enabled: !!sessionExercises && sessionExercises.length > 0,
+  });
+
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
   const [completing, setCompleting] = useState(false);
 
   useEffect(() => {
-    if (session?.status === 'planned') startSession(session.id);
-  }, [session?.id, session?.status]);
-
-  useEffect(() => {
-    if (sessionExercises && sessionExercises.length > 0) {
-      getExercisesByIds(sessionExercises.map((se) => se.exerciseId)).then(setExerciseMap);
+    if (session?.status === 'planned') {
+      startSession(session.id).then(() =>
+        queryClient.invalidateQueries({ queryKey: ['session', sessionId] }),
+      );
     }
-  }, [sessionExercises]);
+  }, [session?.id, session?.status, sessionId, queryClient]);
 
   const rows = useMemo(
-    () => sessionExercises?.map((se) => ({ se, exercise: exerciseMap.get(se.exerciseId) })) ?? [],
+    () => sessionExercises?.map((se) => ({ se, exercise: exerciseMap?.get(se.exerciseId) })) ?? [],
     [sessionExercises, exerciseMap],
   );
 

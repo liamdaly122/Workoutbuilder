@@ -1,4 +1,4 @@
-import { db } from '../db';
+import { supabase } from '../supabaseClient';
 import { generateId } from '../../lib/id';
 import type { Exercise, EquipmentTag, MovementPattern } from '../../domain/types';
 
@@ -10,9 +10,59 @@ export interface ExerciseFilters {
   includeHidden?: boolean;
 }
 
-export async function listExercises(filters: ExerciseFilters = {}): Promise<Exercise[]> {
-  let results = await db.exercises.toArray();
+interface ExerciseRow {
+  id: string;
+  name: string;
+  force: Exercise['force'];
+  level: Exercise['level'];
+  mechanic: Exercise['mechanic'];
+  equipment: EquipmentTag;
+  primary_muscles: string[];
+  secondary_muscles: string[];
+  muscle_group: string;
+  instructions: string[];
+  category: string;
+  movement_pattern: MovementPattern;
+  source: Exercise['source'];
+  owner_id: string | null;
+  created_at: string;
+  updated_at: string;
+  exercise_preferences: Array<{ is_favorite: boolean; is_hidden: boolean }> | null;
+}
 
+const EXERCISE_SELECT = '*, exercise_preferences(is_favorite, is_hidden)';
+
+function toDomainExercise(row: ExerciseRow): Exercise {
+  const pref = row.exercise_preferences?.[0];
+  return {
+    id: row.id,
+    name: row.name,
+    force: row.force,
+    level: row.level,
+    mechanic: row.mechanic,
+    equipment: row.equipment,
+    primaryMuscles: row.primary_muscles,
+    secondaryMuscles: row.secondary_muscles,
+    muscleGroup: row.muscle_group,
+    instructions: row.instructions,
+    category: row.category,
+    movementPattern: row.movement_pattern,
+    source: row.source,
+    isFavorite: pref?.is_favorite ?? false,
+    isHidden: pref?.is_hidden ?? false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function listExercises(filters: ExerciseFilters = {}): Promise<Exercise[]> {
+  const { data, error } = await supabase.from('exercises').select(EXERCISE_SELECT);
+  if (error) throw error;
+
+  // Filtering happens client-side (same as the old approach): under a thousand
+  // rows is trivial to filter in JS, and it sidesteps PostgREST's filter-on-
+  // embedded-resource quirks for the includeHidden/preference-based filter.
+  let results = (data as ExerciseRow[]).map(toDomainExercise);
   if (!filters.includeHidden) results = results.filter((e) => !e.isHidden);
   if (filters.muscleGroup) results = results.filter((e) => e.muscleGroup === filters.muscleGroup);
   if (filters.equipment) results = results.filter((e) => e.equipment === filters.equipment);
@@ -27,15 +77,17 @@ export async function listExercises(filters: ExerciseFilters = {}): Promise<Exer
 }
 
 export async function getExercise(id: string): Promise<Exercise | undefined> {
-  return db.exercises.get(id);
+  const { data, error } = await supabase.from('exercises').select(EXERCISE_SELECT).eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data ? toDomainExercise(data as ExerciseRow) : undefined;
 }
 
 export async function getExercisesByIds(ids: string[]): Promise<Map<string, Exercise>> {
-  const found = await db.exercises.bulkGet(ids);
+  if (ids.length === 0) return new Map();
+  const { data, error } = await supabase.from('exercises').select(EXERCISE_SELECT).in('id', ids);
+  if (error) throw error;
   const map = new Map<string, Exercise>();
-  found.forEach((ex, i) => {
-    if (ex) map.set(ids[i], ex);
-  });
+  for (const row of data as ExerciseRow[]) map.set(row.id, toDomainExercise(row));
   return map;
 }
 
@@ -45,18 +97,46 @@ export async function listSwapCandidates(
   availableTags: ReadonlySet<EquipmentTag>,
   excludeExerciseId: string,
 ): Promise<Exercise[]> {
-  const all = await db.exercises.where('movementPattern').equals(movementPattern).toArray();
-  return all
+  const { data, error } = await supabase
+    .from('exercises')
+    .select(EXERCISE_SELECT)
+    .eq('movement_pattern', movementPattern);
+  if (error) throw error;
+
+  return (data as ExerciseRow[])
+    .map(toDomainExercise)
     .filter((e) => !e.isHidden && e.id !== excludeExerciseId && availableTags.has(e.equipment))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+async function currentUserId(): Promise<string> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not signed in');
+  return user.id;
+}
+
 export async function toggleFavorite(id: string, isFavorite: boolean): Promise<void> {
-  await db.exercises.update(id, { isFavorite, updatedAt: new Date().toISOString() });
+  const userId = await currentUserId();
+  const { error } = await supabase
+    .from('exercise_preferences')
+    .upsert(
+      { user_id: userId, exercise_id: id, is_favorite: isFavorite, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,exercise_id' },
+    );
+  if (error) throw error;
 }
 
 export async function toggleHidden(id: string, isHidden: boolean): Promise<void> {
-  await db.exercises.update(id, { isHidden, updatedAt: new Date().toISOString() });
+  const userId = await currentUserId();
+  const { error } = await supabase
+    .from('exercise_preferences')
+    .upsert(
+      { user_id: userId, exercise_id: id, is_hidden: isHidden, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,exercise_id' },
+    );
+  if (error) throw error;
 }
 
 export interface NewCustomExercise {
@@ -71,26 +151,27 @@ export interface NewCustomExercise {
 }
 
 export async function addCustomExercise(input: NewCustomExercise): Promise<Exercise> {
+  const userId = await currentUserId();
   const now = new Date().toISOString();
-  const exercise: Exercise = {
+  const row = {
     id: generateId('custom'),
     name: input.name,
     force: null,
     level: 'intermediate',
     mechanic: input.mechanic ?? null,
     equipment: input.equipment,
-    primaryMuscles: input.primaryMuscles,
-    secondaryMuscles: input.secondaryMuscles ?? [],
-    muscleGroup: input.muscleGroup,
+    primary_muscles: input.primaryMuscles,
+    secondary_muscles: input.secondaryMuscles ?? [],
+    muscle_group: input.muscleGroup,
     instructions: input.instructions ?? [],
     category: 'strength',
-    movementPattern: input.movementPattern,
+    movement_pattern: input.movementPattern,
     source: 'custom',
-    isHidden: false,
-    isFavorite: false,
-    createdAt: now,
-    updatedAt: now,
+    owner_id: userId,
+    created_at: now,
+    updated_at: now,
   };
-  await db.exercises.add(exercise);
-  return exercise;
+  const { data, error } = await supabase.from('exercises').insert(row).select(EXERCISE_SELECT).single();
+  if (error) throw error;
+  return toDomainExercise(data as ExerciseRow);
 }

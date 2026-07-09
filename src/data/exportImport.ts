@@ -1,20 +1,47 @@
-import { exportDB } from 'dexie-export-import';
-import { db } from './db';
+import { supabase } from './supabaseClient';
 
-export async function exportDatabaseToFile(): Promise<void> {
-  const blob = await exportDB(db);
+const TABLES = [
+  'exercises',
+  'exercise_preferences',
+  'equipment_inventory',
+  'mesocycles',
+  'workout_sessions',
+  'session_exercises',
+  'set_logs',
+  'body_metrics',
+  'settings',
+] as const;
+
+/**
+ * Downloads a JSON copy of everything in your account, as a personal safety
+ * net - Supabase's free tier doesn't include long-term backups. This is a
+ * point-in-time copy for your own records, not a restore/import feature:
+ * your Supabase database is the durable, always-current copy of your data.
+ */
+export async function exportMyDataToFile(): Promise<void> {
+  const result: Record<string, unknown> = {};
+
+  for (const table of TABLES) {
+    // exercises is a shared table; only export the rows you own (custom exercises),
+    // not the whole seeded catalog.
+    const query =
+      table === 'exercises'
+        ? supabase.from(table).select('*').not('owner_id', 'is', null)
+        : supabase.from(table).select('*');
+
+    const { data, error } = await query;
+    if (error) throw error;
+    result[table] = data;
+  }
+
+  const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const timestamp = new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = `workoutbuilder-backup-${timestamp}.json`;
+  a.download = `workoutbuilder-export-${timestamp}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-/** Wipes all local data and replaces it with the contents of a previously exported backup file. */
-export async function importDatabaseFromFile(file: File): Promise<void> {
-  await db.import(file, { clearTablesBeforeImport: true });
 }

@@ -1,6 +1,7 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../data/db';
+import { useQuery } from '@tanstack/react-query';
+import { getSettings } from '../data/repositories/settingsRepo';
 
 export function useSettings() {
-  return useLiveQuery(() => db.settings.get('app'), []);
+  const query = useQuery({ queryKey: ['settings'], queryFn: getSettings });
+  return query.data;
 }

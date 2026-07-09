@@ -1,6 +1,7 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../data/db';
+import { useQuery } from '@tanstack/react-query';
+import { getActiveMesocycle } from '../data/repositories/mesocycleRepo';
 
 export function useActiveMesocycle() {
-  return useLiveQuery(() => db.mesocycles.where('status').equals('active').first(), []);
+  const query = useQuery({ queryKey: ['mesocycle', 'active'], queryFn: getActiveMesocycle });
+  return query.data;
 }

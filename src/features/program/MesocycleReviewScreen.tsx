@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useActiveMesocycle } from '../../hooks/useActiveMesocycle';
 import {
   createMesocycle,
   markMesocycleCompleted,
   suggestNextCycleBaselines,
 } from '../../data/repositories/mesocycleRepo';
-import { getProgramTemplateById } from '../../data/repositories/programRepo';
+import { getProgramTemplate } from '../../domain/program/templates';
 import { getExercisesByIds, listExercises } from '../../data/repositories/exerciseRepo';
 import { getAvailableEquipmentTags } from '../../data/repositories/equipmentRepo';
 import type { Exercise, ProgramTemplate } from '../../domain/types';
@@ -21,6 +22,7 @@ const RATIONALE_LABEL: Record<NextCycleSuggestion['rationale'], string> = {
 
 export function MesocycleReviewScreen() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const mesocycle = useActiveMesocycle();
   const [template, setTemplate] = useState<ProgramTemplate | null>(null);
   const [suggestions, setSuggestions] = useState<NextCycleSuggestion[] | null>(null);
@@ -30,12 +32,9 @@ export function MesocycleReviewScreen() {
 
   useEffect(() => {
     if (!mesocycle) return;
+    setTemplate(getProgramTemplate(mesocycle.programTemplateId));
     (async () => {
-      const [t, s] = await Promise.all([
-        getProgramTemplateById(mesocycle.programTemplateId),
-        suggestNextCycleBaselines(mesocycle),
-      ]);
-      setTemplate(t ?? null);
+      const s = await suggestNextCycleBaselines(mesocycle);
       setSuggestions(s);
       setExerciseMap(await getExercisesByIds(s.map((x) => x.exerciseId)));
       setWeights(Object.fromEntries(s.map((x) => [x.exerciseId, x.suggestedWeight])));
@@ -59,6 +58,7 @@ export function MesocycleReviewScreen() {
         startDate: new Date().toISOString(),
         previousMesocycleId: mesocycle.id,
       });
+      await queryClient.invalidateQueries({ queryKey: ['mesocycle'] });
       navigate('/', { replace: true });
     } finally {
       setSubmitting(false);

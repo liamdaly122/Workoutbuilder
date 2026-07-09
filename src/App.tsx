@@ -1,24 +1,17 @@
-import { useEffect, useState } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './app/router';
-import { ensureSeeded } from './data/seed/ingestExercises';
+import { AuthProvider } from './app/AuthProvider';
+import { queryClient } from './app/queryClient';
 
 function App() {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    ensureSeeded().then(() => setReady(true));
-  }, []);
-
-  if (!ready) {
-    return (
-      <div className="flex min-h-full items-center justify-center">
-        <p className="text-sm text-slate-500">Loading your workout library…</p>
-      </div>
-    );
-  }
-
-  return <RouterProvider router={router} />;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
 }
 
 export default App;

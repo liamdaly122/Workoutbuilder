@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import type { EquipmentTag, Exercise, ProgramTemplate, TrainingGoal } from '../../domain/types';
 import { DEFAULT_PROGRESSION_RULES } from '../../domain/types';
 import { eligibleTemplates } from '../../domain/program/templates';
@@ -35,6 +36,7 @@ interface Props {
 
 export function ReviewStep({ goal, onBack }: Props) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [allExercises, setAllExercises] = useState<Exercise[] | null>(null);
   const [availableTags, setAvailableTags] = useState<Set<EquipmentTag> | null>(null);
   const [templates, setTemplates] = useState<ProgramTemplate[]>([]);
@@ -93,6 +95,8 @@ export function ReviewStep({ goal, onBack }: Props) {
         cycleNumber: 1,
         startDate: new Date().toISOString(),
       });
+      await queryClient.invalidateQueries({ queryKey: ['settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['mesocycle'] });
       navigate('/', { replace: true });
     } finally {
       setSubmitting(false);

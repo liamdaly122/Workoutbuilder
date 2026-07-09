@@ -173,14 +173,12 @@ export interface BodyMetric {
 }
 
 export interface Settings {
-  id: 'app';
   unitSystem: UnitSystem;
   goal: TrainingGoal;
   onboardingCompleted: boolean;
   restTimerDefaults: { mainSec: number; accessorySec: number };
   progressionRuleSet: ProgressionRuleSet;
   oneRepMaxFormula: 'epley' | 'brzycki';
-  seedVersion: string;
 }
 
 export const DEFAULT_PROGRESSION_RULES: ProgressionRuleSet = {

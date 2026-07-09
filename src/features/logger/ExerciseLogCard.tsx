@@ -1,9 +1,8 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import {
   ensureSetLogsForSessionExercise,
   getLastPerformance,
-  getSetLogsForSessionExercise,
   logSet,
 } from '../../data/repositories/setLogRepo';
 import { listSwapCandidates } from '../../data/repositories/exerciseRepo';
@@ -21,24 +20,25 @@ interface Props {
 }
 
 export function ExerciseLogCard({ sessionExercise, exercise, formula, onSetLogged }: Props) {
-  const [lastPerformance, setLastPerformance] = useState<{ weight: number | null; reps: number | null } | null>(
-    null,
-  );
+  const queryClient = useQueryClient();
   const [swapping, setSwapping] = useState(false);
   const [candidates, setCandidates] = useState<Exercise[]>([]);
 
-  useEffect(() => {
-    ensureSetLogsForSessionExercise(sessionExercise);
-    getLastPerformance(exercise.id, sessionExercise.id).then(setLastPerformance);
-  }, [sessionExercise.id, exercise.id]);
+  // ensureSetLogsForSessionExercise both materializes the planned set rows (once)
+  // and returns them, so this single query replaces the old effect+live-query pair.
+  const { data: setLogs } = useQuery({
+    queryKey: ['setLogs', sessionExercise.id],
+    queryFn: () => ensureSetLogsForSessionExercise(sessionExercise),
+  });
 
-  const setLogs = useLiveQuery(
-    () => getSetLogsForSessionExercise(sessionExercise.id),
-    [sessionExercise.id],
-  );
+  const { data: lastPerformance } = useQuery({
+    queryKey: ['lastPerformance', exercise.id, sessionExercise.id],
+    queryFn: () => getLastPerformance(exercise.id, sessionExercise.id),
+  });
 
   async function handleSave(setIndex: number, data: { actualWeight: number | null; actualReps: number | null }) {
     await logSet(sessionExercise.id, setIndex, data, formula);
+    await queryClient.invalidateQueries({ queryKey: ['setLogs', sessionExercise.id] });
     onSetLogged(sessionExercise.restSeconds);
   }
 
@@ -51,6 +51,7 @@ export function ExerciseLogCard({ sessionExercise, exercise, formula, onSetLogge
 
   async function handleSwap(newExerciseId: string) {
     await swapSessionExercise(sessionExercise.id, newExerciseId);
+    await queryClient.invalidateQueries({ queryKey: ['sessionExercises', sessionExercise.sessionId] });
     setSwapping(false);
   }
 

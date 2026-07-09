@@ -1,6 +1,7 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../data/db';
+import { useQuery } from '@tanstack/react-query';
+import { getEquipmentInventory } from '../data/repositories/equipmentRepo';
 
 export function useEquipmentInventory() {
-  return useLiveQuery(() => db.equipmentInventory.toArray(), []);
+  const query = useQuery({ queryKey: ['equipmentInventory'], queryFn: getEquipmentInventory });
+  return query.data;
 }

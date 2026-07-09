@@ -1,10 +1,10 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { listCompletedSessions } from '../../data/repositories/sessionRepo';
 import { HistorySessionDetail } from './HistorySessionDetail';
 
 export function HistoryScreen() {
-  const sessions = useLiveQuery(() => listCompletedSessions(), []);
+  const { data: sessions } = useQuery({ queryKey: ['completedSessions'], queryFn: listCompletedSessions });
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (

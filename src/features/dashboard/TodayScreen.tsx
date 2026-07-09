@@ -1,50 +1,37 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useActiveMesocycle } from '../../hooks/useActiveMesocycle';
 import { getSessionExercises, getSessionsForMesocycle } from '../../data/repositories/sessionRepo';
 import { getExercisesByIds } from '../../data/repositories/exerciseRepo';
-import { getProgramTemplateById } from '../../data/repositories/programRepo';
+import { getProgramTemplate } from '../../domain/program/templates';
 import { WeekProgress } from '../../components/WeekProgress';
 import { Button } from '../../components/Button';
-import { useEffect, useState } from 'react';
-import type { Exercise, SessionExercise } from '../../domain/types';
 
 export function TodayScreen() {
   const navigate = useNavigate();
   const mesocycle = useActiveMesocycle();
 
-  const sessions = useLiveQuery(
-    () => (mesocycle ? getSessionsForMesocycle(mesocycle.id) : undefined),
-    [mesocycle?.id],
-  );
-
-  const [nextSessionExercises, setNextSessionExercises] = useState<
-    Array<{ sessionExercise: SessionExercise; exercise: Exercise }> | null
-  >(null);
-  const [templateName, setTemplateName] = useState<string>('');
+  const { data: sessions } = useQuery({
+    queryKey: ['sessions', mesocycle?.id],
+    queryFn: () => getSessionsForMesocycle(mesocycle!.id),
+    enabled: !!mesocycle,
+  });
 
   const nextSession = sessions?.find((s) => s.status === 'planned' || s.status === 'in_progress');
   const completedCount = sessions?.filter((s) => s.status === 'completed' || s.status === 'skipped').length ?? 0;
+  const templateName = mesocycle ? getProgramTemplate(mesocycle.programTemplateId).name : '';
 
-  useEffect(() => {
-    if (mesocycle) getProgramTemplateById(mesocycle.programTemplateId).then((t) => setTemplateName(t?.name ?? ''));
-  }, [mesocycle?.programTemplateId]);
-
-  useEffect(() => {
-    if (!nextSession) {
-      setNextSessionExercises(null);
-      return;
-    }
-    (async () => {
-      const sessionExercises = await getSessionExercises(nextSession.id);
+  const { data: nextSessionExercises } = useQuery({
+    queryKey: ['sessionExercises', nextSession?.id],
+    queryFn: async () => {
+      const sessionExercises = await getSessionExercises(nextSession!.id);
       const exerciseMap = await getExercisesByIds(sessionExercises.map((se) => se.exerciseId));
-      setNextSessionExercises(
-        sessionExercises
-          .map((se) => ({ sessionExercise: se, exercise: exerciseMap.get(se.exerciseId) as Exercise }))
-          .filter((row) => row.exercise),
-      );
-    })();
-  }, [nextSession?.id]);
+      return sessionExercises
+        .map((se) => ({ sessionExercise: se, exercise: exerciseMap.get(se.exerciseId) }))
+        .filter((row) => row.exercise);
+    },
+    enabled: !!nextSession,
+  });
 
   if (mesocycle === undefined || sessions === undefined) {
     return <p className="text-sm text-slate-400">Loading…</p>;
@@ -96,7 +83,7 @@ export function TodayScreen() {
             <ul className="flex flex-col gap-1 text-sm text-slate-400">
               {nextSessionExercises?.map(({ sessionExercise, exercise }) => (
                 <li key={sessionExercise.id}>
-                  {exercise.name} · {sessionExercise.targetSets}×
+                  {exercise!.name} · {sessionExercise.targetSets}×
                   {sessionExercise.targetRepRange[0]}-{sessionExercise.targetRepRange[1]}
                   {sessionExercise.targetWeight ? ` @ ${sessionExercise.targetWeight}kg` : ''}
                 </li>

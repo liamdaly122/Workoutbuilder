@@ -1,36 +1,38 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSettings } from '../../hooks/useSettings';
 import { useEquipmentInventory } from '../../hooks/useEquipmentInventory';
 import { setEquipmentAvailability } from '../../data/repositories/equipmentRepo';
 import { updateSettings } from '../../data/repositories/settingsRepo';
-import { exportDatabaseToFile, importDatabaseFromFile } from '../../data/exportImport';
+import { exportMyDataToFile } from '../../data/exportImport';
+import { supabase } from '../../data/supabaseClient';
 import { EquipmentGrid } from '../../components/EquipmentGrid';
 import { Button } from '../../components/Button';
-import type { EquipmentItem, TrainingGoal } from '../../domain/types';
+import type { EquipmentItem, Settings, TrainingGoal } from '../../domain/types';
 
 export function SettingsScreen() {
+  const queryClient = useQueryClient();
   const settings = useSettings();
   const equipment = useEquipmentInventory();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [importMessage, setImportMessage] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   async function toggleEquipment(item: EquipmentItem) {
     if (item.id === 'bodyweight') return;
     await setEquipmentAvailability(item.id, !item.available);
+    queryClient.invalidateQueries({ queryKey: ['equipmentInventory'] });
   }
 
-  async function handleImportFile(file: File) {
-    setImporting(true);
-    setImportMessage('');
+  async function saveSettings(patch: Partial<Settings>) {
+    await updateSettings(patch);
+    queryClient.invalidateQueries({ queryKey: ['settings'] });
+  }
+
+  async function handleExport() {
+    setExporting(true);
     try {
-      await importDatabaseFromFile(file);
-      setImportMessage('Import complete. Reloading…');
-      setTimeout(() => window.location.reload(), 1000);
-    } catch (err) {
-      setImportMessage(err instanceof Error ? `Import failed: ${err.message}` : 'Import failed.');
+      await exportMyDataToFile();
     } finally {
-      setImporting(false);
+      setExporting(false);
     }
   }
 
@@ -45,7 +47,7 @@ export function SettingsScreen() {
         <p className="text-xs text-slate-500">Applies to your next generated cycle.</p>
         <select
           value={settings.goal}
-          onChange={(e) => updateSettings({ goal: e.target.value as TrainingGoal })}
+          onChange={(e) => saveSettings({ goal: e.target.value as TrainingGoal })}
           className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white"
         >
           <option value="strength">Strength</option>
@@ -70,7 +72,7 @@ export function SettingsScreen() {
               step={0.25}
               value={settings.progressionRuleSet.upperBodyIncrementKg}
               onChange={(e) =>
-                updateSettings({
+                saveSettings({
                   progressionRuleSet: {
                     ...settings.progressionRuleSet,
                     upperBodyIncrementKg: Number(e.target.value),
@@ -87,7 +89,7 @@ export function SettingsScreen() {
               step={0.25}
               value={settings.progressionRuleSet.lowerBodyIncrementKg}
               onChange={(e) =>
-                updateSettings({
+                saveSettings({
                   progressionRuleSet: {
                     ...settings.progressionRuleSet,
                     lowerBodyIncrementKg: Number(e.target.value),
@@ -104,7 +106,7 @@ export function SettingsScreen() {
               step={0.25}
               value={settings.progressionRuleSet.roundingIncrementKg}
               onChange={(e) =>
-                updateSettings({
+                saveSettings({
                   progressionRuleSet: {
                     ...settings.progressionRuleSet,
                     roundingIncrementKg: Number(e.target.value),
@@ -123,7 +125,7 @@ export function SettingsScreen() {
               max={100}
               value={Math.round(settings.progressionRuleSet.successThresholdPct * 100)}
               onChange={(e) =>
-                updateSettings({
+                saveSettings({
                   progressionRuleSet: {
                     ...settings.progressionRuleSet,
                     successThresholdPct: Number(e.target.value) / 100,
@@ -140,7 +142,7 @@ export function SettingsScreen() {
         <h2 className="text-sm font-medium text-slate-300">Estimated 1RM formula</h2>
         <select
           value={settings.oneRepMaxFormula}
-          onChange={(e) => updateSettings({ oneRepMaxFormula: e.target.value as 'epley' | 'brzycki' })}
+          onChange={(e) => saveSettings({ oneRepMaxFormula: e.target.value as 'epley' | 'brzycki' })}
           className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white"
         >
           <option value="epley">Epley</option>
@@ -158,7 +160,7 @@ export function SettingsScreen() {
               step={15}
               value={settings.restTimerDefaults.mainSec}
               onChange={(e) =>
-                updateSettings({
+                saveSettings({
                   restTimerDefaults: { ...settings.restTimerDefaults, mainSec: Number(e.target.value) },
                 })
               }
@@ -172,7 +174,7 @@ export function SettingsScreen() {
               step={15}
               value={settings.restTimerDefaults.accessorySec}
               onChange={(e) =>
-                updateSettings({
+                saveSettings({
                   restTimerDefaults: { ...settings.restTimerDefaults, accessorySec: Number(e.target.value) },
                 })
               }
@@ -183,28 +185,21 @@ export function SettingsScreen() {
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-slate-300">Backup</h2>
+        <h2 className="text-sm font-medium text-slate-300">Your data</h2>
         <p className="text-xs text-slate-500">
-          Your data lives only on this device. Export a backup regularly, especially before clearing
-          browser data or switching devices.
+          Your data lives in your own Supabase project and follows you across every device you sign into.
+          This downloads a personal point-in-time copy as a JSON file, just for peace of mind.
         </p>
-        <Button variant="secondary" onClick={() => exportDatabaseToFile()}>
-          Export backup (.json)
+        <Button variant="secondary" onClick={handleExport} disabled={exporting}>
+          {exporting ? 'Preparing…' : 'Download my data (.json)'}
         </Button>
-        <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
-          {importing ? 'Importing…' : 'Restore from backup'}
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium text-slate-300">Account</h2>
+        <Button variant="secondary" onClick={() => supabase.auth.signOut()}>
+          Sign out
         </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/json"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleImportFile(file);
-          }}
-        />
-        {importMessage && <p className="text-xs text-slate-400">{importMessage}</p>}
       </section>
     </div>
   );

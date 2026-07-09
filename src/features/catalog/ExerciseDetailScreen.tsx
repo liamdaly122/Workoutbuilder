@@ -1,13 +1,32 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { db } from '../../data/db';
-import { toggleFavorite, toggleHidden } from '../../data/repositories/exerciseRepo';
+import { getExercise, toggleFavorite, toggleHidden } from '../../data/repositories/exerciseRepo';
 import { Button } from '../../components/Button';
 
 export function ExerciseDetailScreen() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const exercise = useLiveQuery(() => (id ? db.exercises.get(id) : undefined), [id]);
+  const queryClient = useQueryClient();
+
+  const { data: exercise } = useQuery({
+    queryKey: ['exercise', id],
+    queryFn: () => getExercise(id!),
+    enabled: !!id,
+  });
+
+  async function handleToggleFavorite() {
+    if (!exercise) return;
+    await toggleFavorite(exercise.id, !exercise.isFavorite);
+    queryClient.invalidateQueries({ queryKey: ['exercise', id] });
+    queryClient.invalidateQueries({ queryKey: ['exercises'] });
+  }
+
+  async function handleToggleHidden() {
+    if (!exercise) return;
+    await toggleHidden(exercise.id, !exercise.isHidden);
+    queryClient.invalidateQueries({ queryKey: ['exercise', id] });
+    queryClient.invalidateQueries({ queryKey: ['exercises'] });
+  }
 
   if (exercise === undefined) return <p className="text-sm text-slate-400">Loading…</p>;
   if (!exercise) return <p className="text-sm text-slate-400">Exercise not found.</p>;
@@ -25,10 +44,10 @@ export function ExerciseDetailScreen() {
       </div>
 
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={() => toggleFavorite(exercise.id, !exercise.isFavorite)}>
+        <Button variant="secondary" onClick={handleToggleFavorite}>
           {exercise.isFavorite ? '★ Favorited' : '☆ Favorite'}
         </Button>
-        <Button variant="secondary" onClick={() => toggleHidden(exercise.id, !exercise.isHidden)}>
+        <Button variant="secondary" onClick={handleToggleHidden}>
           {exercise.isHidden ? 'Unhide' : 'Hide from catalog'}
         </Button>
       </div>

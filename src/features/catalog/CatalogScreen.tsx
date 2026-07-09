@@ -1,4 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listExercises } from '../../data/repositories/exerciseRepo';
@@ -10,20 +10,21 @@ import { Button } from '../../components/Button';
 const MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core', 'neck', 'other'];
 
 export function CatalogScreen() {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [muscleGroup, setMuscleGroup] = useState('');
   const [equipment, setEquipment] = useState<EquipmentTag | ''>('');
   const [showAddForm, setShowAddForm] = useState(false);
 
-  const exercises = useLiveQuery(
-    () =>
+  const { data: exercises } = useQuery({
+    queryKey: ['exercises', { search, muscleGroup, equipment }],
+    queryFn: () =>
       listExercises({
         search: search || undefined,
         muscleGroup: muscleGroup || undefined,
         equipment: equipment || undefined,
       }),
-    [search, muscleGroup, equipment],
-  );
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -34,7 +35,14 @@ export function CatalogScreen() {
         </Button>
       </div>
 
-      {showAddForm && <AddCustomExerciseForm onDone={() => setShowAddForm(false)} />}
+      {showAddForm && (
+        <AddCustomExerciseForm
+          onDone={() => {
+            setShowAddForm(false);
+            queryClient.invalidateQueries({ queryKey: ['exercises'] });
+          }}
+        />
+      )}
 
       <input
         placeholder="Search exercises…"
